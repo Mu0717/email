@@ -40,11 +40,11 @@ RUN mkdir -p /app/data && chown appuser:appuser /app/data
 USER appuser
 
 # 暴露端口
-EXPOSE 8000
+EXPOSE 8002
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/api')" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8002/api')" || exit 1
 
 # 启动命令
 CMD ["./docker-entrypoint.sh"] 

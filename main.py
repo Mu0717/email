@@ -30,7 +30,13 @@ from config import verify_admin_password, get_config_info
 # 配置常量
 # ============================================================================
 
-ACCOUNTS_FILE = "accounts.json"
+import database
+from contextlib import asynccontextmanager
+
+# ============================================================================
+# 配置常量
+# ============================================================================
+
 TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
 IMAP_SERVER = "outlook.live.com"
 IMAP_PORT = 993
@@ -52,6 +58,12 @@ class AccountCredentials(BaseModel):
 class AccountStatus(BaseModel):
     email: EmailStr
     status: str = "unknown"  # "active", "inactive", "unknown"
+    is_sold: bool = False
+    remark: str = ""
+
+class AccountUpdateModel(BaseModel):
+    is_sold: Optional[bool] = None
+    remark: Optional[str] = None
 
 class AccountDeleteRequest(BaseModel):
     emails: List[EmailStr]
@@ -199,134 +211,83 @@ def extract_email_content(email_message: email.message.EmailMessage) -> tuple[st
 # ============================================================================
 
 async def get_account_credentials(email_id: str) -> AccountCredentials:
-    """从accounts.json获取账户凭证"""
+    """从数据库获取账户凭证"""
     try:
-        if not Path(ACCOUNTS_FILE).exists():
+        account_data = await database.get_account(email_id)
+        
+        if not account_data:
             raise HTTPException(status_code=404, detail="Account not found")
         
-        with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            accounts = json.load(f)
-        
-        if email_id not in accounts:
-            raise HTTPException(status_code=404, detail="Account not found")
-        
-        account_data = accounts[email_id]
         return AccountCredentials(
             email=email_id,
             refresh_token=account_data['refresh_token'],
             client_id=account_data['client_id']
         )
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to read accounts file")
     except Exception as e:
         logger.error(f"Error getting account credentials: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def get_all_accounts() -> Dict[str, Dict[str, str]]:
-    """获取所有账户信息（优化IO）"""
+    """获取所有账户信息"""
     try:
-        if not Path(ACCOUNTS_FILE).exists():
-            return {}
-        
-        # 使用线程池执行文件读取
-        return await asyncio.to_thread(_read_accounts_sync)
+        accounts_list = await database.get_all_accounts()
+        # 转换为旧格式以保持兼容性
+        return {
+            row['email']: {
+                'refresh_token': row['refresh_token'], 
+                'client_id': row['client_id'],
+                'is_sold': row.get('is_sold', 0) == 1,
+                'remark': row.get('remark', '')
+            } for row in accounts_list
+        }
     except Exception as e:
         logger.error(f"Error getting all accounts: {e}")
         return {}
 
-def _read_accounts_sync() -> Dict[str, Dict[str, str]]:
-    """同步读取函数"""
-    try:
-        with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        logger.error("Failed to decode accounts file")
-        return {}
-
 
 async def save_multiple_accounts_batch(credentials_list: List[AccountCredentials]) -> None:
-    """批量保存多个账户凭证（优化版本）"""
+    """批量保存多个账户凭证"""
     try:
-        await asyncio.to_thread(_save_multiple_accounts_sync, credentials_list)
+        # Convert to list of dicts for database
+        accounts_data = [
+            {
+                'email': cred.email,
+                'refresh_token': cred.refresh_token,
+                'client_id': cred.client_id
+            } for cred in credentials_list
+        ]
+        await database.save_accounts_batch(accounts_data)
         logger.info(f"Batch saved {len(credentials_list)} accounts")
     except Exception as e:
         logger.error(f"Error batch saving accounts: {e}")
         raise HTTPException(status_code=500, detail="Failed to batch save accounts")
 
-def _save_multiple_accounts_sync(credentials_list: List[AccountCredentials]):
-    """同步批量保存函数"""
-    # 读取现有账户
-    accounts = {}
-    if Path(ACCOUNTS_FILE).exists():
-        with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            accounts = json.load(f)
-    
-    # 批量更新账户信息
-    for credentials in credentials_list:
-        accounts[credentials.email] = {
-            'refresh_token': credentials.refresh_token,
-            'client_id': credentials.client_id
-        }
-    
-    # 直接写入文件（用户要求移除原子写入）
-    with open(ACCOUNTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(accounts, f, indent=2, ensure_ascii=False)
-
 async def save_account_credentials(email_id: str, credentials: AccountCredentials) -> None:
-    """保存账户凭证到accounts.json（优化IO操作）"""
+    """保存账户凭证到数据库"""
     try:
-        # 使用线程池执行文件IO操作
-        await asyncio.to_thread(_save_account_sync, email_id, credentials)
+        await database.save_account(
+            email=email_id,
+            refresh_token=credentials.refresh_token,
+            client_id=credentials.client_id
+        )
         logger.info(f"Account credentials saved for {email_id}")
     except Exception as e:
         logger.error(f"Error saving account credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to save account")
 
-def _save_account_sync(email_id: str, credentials: AccountCredentials):
-    """同步保存函数"""
-    accounts = {}
-    if Path(ACCOUNTS_FILE).exists():
-        with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            accounts = json.load(f)
-    
-    accounts[email_id] = {
-        'refresh_token': credentials.refresh_token,
-        'client_id': credentials.client_id
-    }
-    
-    # 直接写入文件（用户要求移除原子写入）
-    with open(ACCOUNTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(accounts, f, indent=2, ensure_ascii=False)
-
 
 async def delete_accounts(emails: List[str]) -> Dict[str, int]:
-    """从accounts.json中删除指定的账户"""
+    """从数据库中删除指定的账户"""
     try:
-        if not Path(ACCOUNTS_FILE).exists():
-            return {"deleted": 0, "not_found": len(emails)}
+        deleted = await database.delete_accounts(emails)
+        # Note: SQLite DELETE returns number of deleted rows directly. 
+        # Calculating 'not_found' exactly without a prior check is harder but we can approximate or ignore.
+        # However, the user interface generally expects deleted + not_found = total.
+        not_found = len(emails) - deleted
         
-        with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            accounts = json.load(f)
-        
-        deleted = 0
-        not_found = 0
-        
-        for email in emails:
-            if email in accounts:
-                del accounts[email]
-                deleted += 1
-            else:
-                not_found += 1
-        
-        with open(ACCOUNTS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(accounts, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"Deleted {deleted} accounts, {not_found} not found")
-        return {"deleted": deleted, "not_found": not_found}
-    except json.JSONDecodeError:
-        logger.error("Failed to decode accounts file")
-        raise HTTPException(status_code=500, detail="Failed to read accounts file")
+        logger.info(f"Deleted {deleted} accounts")
+        return {"deleted": deleted, "not_found": max(0, not_found)}
     except Exception as e:
         logger.error(f"Error deleting accounts: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete accounts")
@@ -701,10 +662,20 @@ async def get_email_details(credentials: AccountCredentials, message_id: str) ->
 # FastAPI应用和API端点
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Initializing database...")
+    database.init_db()  # This will also migrate from JSON if it exists
+    yield
+    # Shutdown
+    logger.info("Shutting down...")
+
 app = FastAPI(
     title="Outlook邮件API服务",
     description="基于FastAPI和aioimaplib的异步邮件管理服务",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -856,7 +827,13 @@ async def get_accounts(
     
     if not check_status:
         # 仅返回邮箱列表，不检查状态
-        return [AccountStatus(email=email) for email in accounts.keys()]
+        return [
+            AccountStatus(
+                email=email, 
+                is_sold=data.get('is_sold', False),
+                remark=data.get('remark', '')
+            ) for email, data in accounts.items()
+        ]
     
     # 并行检查所有账户的活性
     result = []
@@ -873,10 +850,15 @@ async def get_accounts(
         tasks.append((email, task))
     
     # 等待所有任务完成
-    for email, task in tasks:
         is_active = await task
         status = "active" if is_active else "inactive"
-        result.append(AccountStatus(email=email, status=status))
+        account_data = accounts.get(email, {})
+        result.append(AccountStatus(
+            email=email, 
+            status=status,
+            is_sold=account_data.get('is_sold', False),
+            remark=account_data.get('remark', '')
+        ))
     
     return result
 
@@ -929,6 +911,24 @@ async def get_email_detail(email_id: str, message_id: str, current_admin: bool =
     """获取邮件详细内容"""
     credentials = await get_account_credentials(email_id)
     return await get_email_details(credentials, message_id)
+
+@app.patch("/accounts/{email_id}")
+async def update_account_metadata_endpoint(
+    email_id: str,
+    update_data: AccountUpdateModel,
+    current_admin: bool = Depends(get_current_admin)
+):
+    """更新账户元数据（销售状态、备注）"""
+    try:
+        await database.update_account_metadata(
+            email=email_id,
+            is_sold=update_data.is_sold,
+            remark=update_data.remark
+        )
+        return {"message": "Account metadata updated successfully", "email": email_id}
+    except Exception as e:
+        logger.error(f"Error updating account {email_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update account metadata")
 
 
 @app.get("/")

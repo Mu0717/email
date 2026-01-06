@@ -29,9 +29,13 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com
 
 # 复制应用代码
 COPY main.py .
+COPY database.py .
 COPY config.py .
 COPY static/ ./static/
 COPY docker-entrypoint.sh .
+
+# 解决Windows换行符问题
+RUN sed -i 's/\r$//' docker-entrypoint.sh
 
 # 设置启动脚本权限
 RUN chmod +x docker-entrypoint.sh

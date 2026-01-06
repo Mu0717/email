@@ -7,7 +7,7 @@ services:
     # 使用root用户运行容器，解决权限问题
     user: root
     ports:
-      - '8000:8000'
+      - '8002:8002'
     volumes:
       # 数据持久化 - 保存用户账户信息
       - ./data:/app/data
@@ -17,7 +17,7 @@ services:
       # 可以通过环境变量覆盖默认配置
       - PYTHONUNBUFFERED=1
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8002
       # 安全配置（生产环境中请修改这些值）
       - ADMIN_PASSWORD=admin123
     restart: unless-stopped
@@ -27,7 +27,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import requests; requests.get('http://localhost:8000/api')",
+          "import requests; requests.get('http://localhost:8002/api')",
         ]
       interval: 30s
       timeout: 10s

@@ -10,6 +10,7 @@ echo "🚀 Outlook邮件客户端 - 一键部署脚本"
 echo "======================================="
 
 # 检查Docker和docker-compose是否安装
+# 检查Docker和docker-compose是否安装
 check_dependencies() {
     echo "📋 检查依赖..."
     
@@ -19,7 +20,14 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! command -v docker-compose &> /dev/null; then
+    # 检测 docker compose 命令
+    if docker compose version &> /dev/null; then
+        COMPOSE_CMD="docker compose"
+        echo "✅ 检测到 Docker Compose V2 (Plugin)"
+    elif command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+        echo "✅ 检测到 Docker Compose V1 (Standalone)"
+    else
         echo "❌ docker-compose未安装，请先安装docker-compose"
         echo "   安装指南: https://docs.docker.com/compose/install/"
         exit 1
@@ -41,43 +49,45 @@ create_directories() {
 }
 
 # 构建和启动服务
+# 构建和启动服务
 deploy_service() {
     echo "🔨 构建Docker镜像..."
-    docker-compose build
+    $COMPOSE_CMD build
     
     echo "🚀 启动服务..."
-    docker-compose up -d
+    $COMPOSE_CMD up -d
     
     echo "⏳ 等待服务启动..."
     sleep 10
     
     # 检查服务状态
-    if docker-compose ps | grep -q "Up"; then
+    if $COMPOSE_CMD ps | grep -q "Up"; then
         echo "✅ 服务启动成功！"
         echo ""
         echo "📋 服务信息:"
         echo "   - Web界面: http://localhost:8000"
         echo "   - API文档: http://localhost:8000/docs"
-        echo "   - 服务状态: docker-compose ps"
-        echo "   - 查看日志: docker-compose logs -f"
+        echo "   - 服务状态: $COMPOSE_CMD ps"
+        echo "   - 查看日志: $COMPOSE_CMD logs -f"
         echo ""
         echo "🎉 部署完成！"
     else
         echo "❌ 服务启动失败，请检查日志:"
-        echo "   docker-compose logs"
+        echo "   $COMPOSE_CMD logs"
         exit 1
     fi
 }
 
 # 显示管理命令
+# 显示管理命令
 show_management_commands() {
     echo ""
     echo "🛠️  常用管理命令:"
-    echo "   启动服务: docker-compose up -d"
-    echo "   停止服务: docker-compose down"
-    echo "   重启服务: docker-compose restart"
-    echo "   查看日志: docker-compose logs -f"
-    echo "   查看状态: docker-compose ps"
+    echo "   启动服务: $COMPOSE_CMD up -d"
+    echo "   停止服务: $COMPOSE_CMD down"
+    echo "   重启服务: $COMPOSE_CMD restart"
+    echo "   查看日志: $COMPOSE_CMD logs -f"
+    echo "   查看状态: $COMPOSE_CMD ps"
     echo ""
 }
 

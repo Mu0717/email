@@ -7,11 +7,15 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-DB_FILE = "emails.db"
+# 确保data目录存在
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
+DB_FILE = DATA_DIR / "emails.db"
 JSON_FILE = "accounts.json"
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(str(DB_FILE))
     conn.row_factory = sqlite3.Row
     return conn
 

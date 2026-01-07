@@ -12,20 +12,23 @@ echo "📁 创建data目录..."
 mkdir -p data
 chmod 777 data
 
-# 2. 创建或修复emails.db文件
-if [ ! -f "emails.db" ]; then
+# 2. 迁移现有的数据库文件到data目录
+if [ -f "emails.db" ] && [ ! -f "data/emails.db" ]; then
+    echo "📦 迁移数据库文件到data目录..."
+    cp emails.db data/emails.db
+    echo "✅ 数据库文件已迁移"
+elif [ ! -f "data/emails.db" ]; then
     echo "📝 创建空的数据库文件..."
-    touch emails.db
+    touch data/emails.db
 fi
 
 # 3. 设置文件权限
 echo "🔐 设置文件权限..."
-chmod 666 emails.db
+chmod 666 data/emails.db
 
 # 4. 显示当前权限
 echo ""
 echo "📋 当前权限:"
-ls -la emails.db
 ls -la data/
 
 # 5. 停止并删除旧容器

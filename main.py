@@ -55,12 +55,6 @@ class AccountCredentials(BaseModel):
     password: Optional[str] = ""
     refresh_token: str
     client_id: str
-    
-    class Config:
-        # 确保所有字段都被序列化，包括password
-        fields = {
-            'password': {'exclude': False}
-        }
 
 class AccountStatus(BaseModel):
     email: EmailStr

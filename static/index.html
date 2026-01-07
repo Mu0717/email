@@ -1,198 +1,325 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outlook账号后台管理系统</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
 
-<body>
+  <body>
     <div class="container">
-        <div class="header">
-            <h1>️ Outlook账号后台管理系统</h1>
+      <div class="header">
+        <h1>️ Outlook账号后台管理系统</h1>
+      </div>
+
+      <div id="adminLoginCard" class="card">
+        <h2>🔐 管理员登录</h2>
+        <p style="color: #64748b; margin-bottom: 20px">
+          请输入管理密码以访问邮件系统
+        </p>
+
+        <div class="input-group">
+          <label>管理密码</label>
+          <input
+            type="password"
+            id="adminPassword"
+            placeholder="请输入管理密码"
+            onkeypress="handleAdminPasswordKeyPress(event)"
+          />
+        </div>
+        <button class="btn btn-primary" onclick="adminLogin()">
+          🔑 验证登录
+        </button>
+      </div>
+
+      <div id="loginCard" class="card hidden">
+        <h2>账户配置</h2>
+
+        <div class="login-tabs">
+          <button class="tab-btn active" onclick="switchTab('single')">
+            单账户登录
+          </button>
+          <button class="tab-btn" onclick="switchTab('batch')">批量登录</button>
+          <button class="tab-btn" onclick="switchTab('manage')">
+            账户管理
+          </button>
         </div>
 
-        <div id="adminLoginCard" class="card">
-            <h2>🔐 管理员登录</h2>
-            <p style="color: #64748b; margin-bottom: 20px;">请输入管理密码以访问邮件系统</p>
-
-            <div class="input-group">
-                <label>管理密码</label>
-                <input type="password" id="adminPassword" placeholder="请输入管理密码"
-                    onkeypress="handleAdminPasswordKeyPress(event)">
-            </div>
-            <button class="btn btn-primary" onclick="adminLogin()">🔑 验证登录</button>
+        <div id="singleLogin" class="tab-content">
+          <div class="input-group">
+            <label>邮箱地址</label>
+            <input type="email" id="email" placeholder="example@outlook.com" />
+          </div>
+          <div class="input-group">
+            <label>刷新令牌</label>
+            <textarea
+              id="refreshToken"
+              rows="3"
+              placeholder="从Azure应用获取的refresh_token"
+            ></textarea>
+          </div>
+          <div class="input-group">
+            <label>客户端ID</label>
+            <input
+              type="text"
+              id="clientId"
+              placeholder="Azure应用的client_id"
+            />
+          </div>
+          <button class="btn btn-primary" onclick="login()">验证并登录</button>
         </div>
 
-        <div id="loginCard" class="card hidden">
-            <h2>账户配置</h2>
-
-            <div class="login-tabs">
-                <button class="tab-btn active" onclick="switchTab('single')">单账户登录</button>
-                <button class="tab-btn" onclick="switchTab('batch')">批量登录</button>
-                <button class="tab-btn" onclick="switchTab('manage')">账户管理</button>
-            </div>
-
-            <div id="singleLogin" class="tab-content">
-                <div class="input-group">
-                    <label>邮箱地址</label>
-                    <input type="email" id="email" placeholder="example@outlook.com">
-                </div>
-                <div class="input-group">
-                    <label>刷新令牌</label>
-                    <textarea id="refreshToken" rows="3" placeholder="从Azure应用获取的refresh_token"></textarea>
-                </div>
-                <div class="input-group">
-                    <label>客户端ID</label>
-                    <input type="text" id="clientId" placeholder="Azure应用的client_id">
-                </div>
-                <button class="btn btn-primary" onclick="login()">验证并登录</button>
-            </div>
-
-            <div id="batchLogin" class="tab-content hidden">
-                <div class="batch-header">
-                    <h3>批量验证账户</h3>
-                    <p class="batch-description">每行一个账户，格式：邮箱----密码----刷新令牌----客户端ID</p>
-                </div>
-                <div class="input-group">
-                    <textarea id="batchAccounts" rows="8"
-                        placeholder="example@outlook.com----password----client_id----refresh_token"></textarea>
-                </div>
-                <button class="btn btn-primary btn-with-icon" onclick="verifyBatchAccounts()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                    验证账户
-                </button>
-                <div id="verificationResultList" class="verification-results"></div>
-            </div>
-
-            <div id="accountManage" class="tab-content hidden">
-                <div class="account-header">
-                    <h3 class="account-title">账户管理 <span class="account-count" id="accountCount">0</span></h3>
-                    <div class="account-actions">
-                        <button class="btn btn-icon" onclick="loadAccountList(true)" title="刷新状态">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round">
-                                <path
-                                    d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
-                            </svg>
-                        </button>
-                        <button class="btn btn-icon btn-danger" onclick="deleteSelectedAccounts()" title="删除选中">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round">
-                                <path
-                                    d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                                <line x1="10" y1="11" x2="10" y2="17" />
-                                <line x1="14" y1="11" x2="14" y2="17" />
-                            </svg>
-                        </button>
-                        <div class="search-container">
-                            <input type="text" id="accountSearch" placeholder="搜索账户..." onkeyup="filterAccounts()">
-                            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8" />
-                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            </svg>
-                        </div>
-                    </div>
-                </div>
-                <div class="account-toolbar">
-                    <div class="account-filter">
-                        <span class="filter-label">筛选:</span>
-                        <button class="filter-btn active" data-filter="all" onclick="filterByStatus('all')">全部</button>
-                        <button class="filter-btn" data-filter="active" onclick="filterByStatus('active')">有效</button>
-                        <button class="filter-btn" data-filter="inactive"
-                            onclick="filterByStatus('inactive')">无效</button>
-                        <button class="filter-btn" data-filter="unsold" onclick="filterByStatus('unsold')">未售</button>
-                        <button class="filter-btn" data-filter="sold" onclick="filterByStatus('sold')">已售</button>
-                    </div>
-                </div>
-
-                <div class="table-container">
-                    <table class="account-table">
-                        <thead>
-                            <tr>
-                                <th width="40">
-                                    <input type="checkbox" id="selectAllAccounts" onchange="toggleSelectAll()">
-                                </th>
-                                <th width="250">邮箱地址</th>
-                                <th width="100">状态</th>
-                                <th width="100">销售状态</th>
-                                <th>备注</th>
-                            </tr>
-                        </thead>
-                        <tbody id="accountTableBody">
-                            <tr class="loading-row">
-                                <td colspan="5" style="text-align: center; padding: 40px;">加载中...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="account-info">
-                    <p>提示: 点击账户邮箱可直接登录该账户 | 备注和状态将自动保存到数据库</p>
-                </div>
-            </div>
+        <div id="batchLogin" class="tab-content hidden">
+          <div class="batch-header">
+            <h3>批量验证账户</h3>
+            <p class="batch-description">
+              每行一个账户，格式：邮箱----密码----刷新令牌----客户端ID
+            </p>
+          </div>
+          <div class="input-group">
+            <textarea
+              id="batchAccounts"
+              rows="8"
+              placeholder="example@outlook.com----password----client_id----refresh_token"
+            ></textarea>
+          </div>
+          <button
+            class="btn btn-primary btn-with-icon"
+            onclick="verifyBatchAccounts()"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            验证账户
+          </button>
+          <div id="verificationResultList" class="verification-results"></div>
         </div>
 
-        <div id="emailCard" class="card hidden">
-            <div class="email-toolbar">
-                <div class="toolbar-left">
-                    <h2>📧 邮件管理</h2>
-                    <span id="userEmail" class="user-email"></span>
-                </div>
-                <div class="toolbar-right">
-                    <div class="account-switcher">
-                        <select id="accountSwitcher" class="account-select" onchange="switchAccount()">
-                            <option value="">选择邮箱...</option>
-                        </select>
-                    </div>
-                    <button class="btn btn-secondary" onclick="loadDualEmails(true)">🔄 刷新</button>
-                    <button class="btn btn-secondary" onclick="backToAccountManage()">📋 账户管理</button>
-                    <button class="btn btn-secondary" onclick="logout()">退出登录</button>
-                </div>
+        <div id="accountManage" class="tab-content hidden">
+          <div class="account-header">
+            <h3 class="account-title">
+              账户管理 <span class="account-count" id="accountCount">0</span>
+            </h3>
+            <div class="account-actions">
+              <button
+                class="btn btn-icon"
+                onclick="loadAccountList(true)"
+                title="刷新状态"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"
+                  />
+                </svg>
+              </button>
+              <button
+                class="btn btn-icon btn-danger"
+                onclick="deleteSelectedAccounts()"
+                title="删除选中"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"
+                  />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </button>
+              <div class="search-container">
+                <input
+                  type="text"
+                  id="accountSearch"
+                  placeholder="搜索账户..."
+                  onkeyup="filterAccounts()"
+                />
+                <svg
+                  class="search-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
             </div>
-
-            <div class="dual-view-container">
-                <div class="email-column">
-                    <div class="column-header">
-                        <h3>📥 收件箱</h3>
-                        <span id="inboxCount" class="email-count">0</span>
-                    </div>
-                    <div id="inboxList" class="email-list loading">
-                        <p>加载中...</p>
-                    </div>
-                    <div id="inboxPagination" class="pagination hidden"></div>
-                </div>
-
-                <div class="email-column">
-                    <div class="column-header">
-                        <h3>🗑️ 垃圾邮件</h3>
-                        <span id="junkCount" class="email-count">0</span>
-                    </div>
-                    <div id="junkList" class="email-list loading">
-                        <p>加载中...</p>
-                    </div>
-                    <div id="junkPagination" class="pagination hidden"></div>
-                </div>
+          </div>
+          <div class="account-toolbar">
+            <div class="account-filter">
+              <span class="filter-label">筛选:</span>
+              <button
+                class="filter-btn active"
+                data-filter="all"
+                onclick="filterByStatus('all')"
+              >
+                全部
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="active"
+                onclick="filterByStatus('active')"
+              >
+                有效
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="inactive"
+                onclick="filterByStatus('inactive')"
+              >
+                无效
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="unsold"
+                onclick="filterByStatus('unsold')"
+              >
+                未售
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="sold"
+                onclick="filterByStatus('sold')"
+              >
+                已售
+              </button>
             </div>
+          </div>
+
+          <div class="table-container">
+            <table class="account-table">
+              <thead>
+                <tr>
+                  <th width="40">
+                    <input
+                      type="checkbox"
+                      id="selectAllAccounts"
+                      onchange="toggleSelectAll()"
+                    />
+                  </th>
+                  <th width="250">邮箱地址</th>
+                  <th width="150">密码</th>
+                  <th width="100">状态</th>
+                  <th width="100">销售状态</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody id="accountTableBody">
+                <tr class="loading-row">
+                  <td colspan="6" style="text-align: center; padding: 40px">
+                    加载中...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="account-info">
+            <p>
+              提示: 点击账户邮箱可直接登录该账户 | 备注和状态将自动保存到数据库
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="emailCard" class="card hidden">
+        <div class="email-toolbar">
+          <div class="toolbar-left">
+            <h2>📧 邮件管理</h2>
+            <span id="userEmail" class="user-email"></span>
+          </div>
+          <div class="toolbar-right">
+            <div class="account-switcher">
+              <select
+                id="accountSwitcher"
+                class="account-select"
+                onchange="switchAccount()"
+              >
+                <option value="">选择邮箱...</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary" onclick="loadDualEmails(true)">
+              🔄 刷新
+            </button>
+            <button class="btn btn-secondary" onclick="backToAccountManage()">
+              📋 账户管理
+            </button>
+            <button class="btn btn-secondary" onclick="logout()">
+              退出登录
+            </button>
+          </div>
         </div>
 
-        <div id="detailCard" class="card hidden">
-            <button class="btn btn-secondary" onclick="backToList()">← 返回列表</button>
-            <div id="emailDetail" class="email-detail"></div>
+        <div class="dual-view-container">
+          <div class="email-column">
+            <div class="column-header">
+              <h3>📥 收件箱</h3>
+              <span id="inboxCount" class="email-count">0</span>
+            </div>
+            <div id="inboxList" class="email-list loading">
+              <p>加载中...</p>
+            </div>
+            <div id="inboxPagination" class="pagination hidden"></div>
+          </div>
+
+          <div class="email-column">
+            <div class="column-header">
+              <h3>🗑️ 垃圾邮件</h3>
+              <span id="junkCount" class="email-count">0</span>
+            </div>
+            <div id="junkList" class="email-list loading">
+              <p>加载中...</p>
+            </div>
+            <div id="junkPagination" class="pagination hidden"></div>
+          </div>
         </div>
+      </div>
+
+      <div id="detailCard" class="card hidden">
+        <button class="btn btn-secondary" onclick="backToList()">
+          ← 返回列表
+        </button>
+        <div id="emailDetail" class="email-detail"></div>
+      </div>
     </div>
 
     <script src="/static/js/script.js"></script>
-</body>
-
+  </body>
 </html>

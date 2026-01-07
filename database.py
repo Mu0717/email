@@ -21,6 +21,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
             email TEXT PRIMARY KEY,
+            password TEXT DEFAULT '',
             refresh_token TEXT NOT NULL,
             client_id TEXT NOT NULL,
             is_sold INTEGER DEFAULT 0,
@@ -41,6 +42,10 @@ def check_and_migrate_schema():
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(accounts)")
         columns = [info[1] for info in cursor.fetchall()]
+        
+        if 'password' not in columns:
+            logger.info("Adding 'password' column to accounts table")
+            cursor.execute("ALTER TABLE accounts ADD COLUMN password TEXT DEFAULT ''")
         
         if 'is_sold' not in columns:
             logger.info("Adding 'is_sold' column to accounts table")
@@ -122,18 +127,19 @@ def _get_all_accounts_sync() -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-def _upsert_account_sync(email: str, refresh_token: str, client_id: str):
+def _upsert_account_sync(email: str, refresh_token: str, client_id: str, password: str = ''):
     conn = get_db_connection()
     try:
-        # 只更新凭证，保留原有的 is_sold 和 remark
+        # 更新凭证和密码，保留原有的 is_sold 和 remark
         conn.execute('''
-            INSERT INTO accounts (email, refresh_token, client_id, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO accounts (email, password, refresh_token, client_id, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(email) DO UPDATE SET
+                password=excluded.password,
                 refresh_token=excluded.refresh_token,
                 client_id=excluded.client_id,
                 updated_at=CURRENT_TIMESTAMP
-        ''', (email, refresh_token, client_id))
+        ''', (email, password, refresh_token, client_id))
         conn.commit()
     finally:
         conn.close()
@@ -186,8 +192,8 @@ async def get_account(email: str) -> Optional[Dict[str, Any]]:
 async def get_all_accounts() -> List[Dict[str, Any]]:
     return await asyncio.to_thread(_get_all_accounts_sync)
 
-async def save_account(email: str, refresh_token: str, client_id: str):
-    await asyncio.to_thread(_upsert_account_sync, email, refresh_token, client_id)
+async def save_account(email: str, refresh_token: str, client_id: str, password: str = ''):
+    await asyncio.to_thread(_upsert_account_sync, email, refresh_token, client_id, password)
 
 async def update_account_metadata(email: str, is_sold: Optional[bool] = None, remark: Optional[str] = None):
     await asyncio.to_thread(_update_account_metadata_sync, email, is_sold, remark)
@@ -199,15 +205,17 @@ async def save_accounts_batch(accounts_list: List[Dict[str, str]]):
         conn = get_db_connection()
         try:
             for acc in accounts_list:
-                # 只更新凭证
+                # 更新凭证和密码
+                password = acc.get('password', '')
                 conn.execute('''
-                    INSERT INTO accounts (email, refresh_token, client_id, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO accounts (email, password, refresh_token, client_id, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(email) DO UPDATE SET
+                        password=excluded.password,
                         refresh_token=excluded.refresh_token,
                         client_id=excluded.client_id,
                         updated_at=CURRENT_TIMESTAMP
-                ''', (acc['email'], acc['refresh_token'], acc['client_id']))
+                ''', (acc['email'], password, acc['refresh_token'], acc['client_id']))
             conn.commit()
         finally:
             conn.close()

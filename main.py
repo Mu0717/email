@@ -52,11 +52,19 @@ logger = logging.getLogger(__name__)
 
 class AccountCredentials(BaseModel):
     email: EmailStr
+    password: Optional[str] = ""
     refresh_token: str
     client_id: str
+    
+    class Config:
+        # 确保所有字段都被序列化，包括password
+        fields = {
+            'password': {'exclude': False}
+        }
 
 class AccountStatus(BaseModel):
     email: EmailStr
+    password: str = ""
     status: str = "unknown"  # "active", "inactive", "unknown"
     is_sold: bool = False
     remark: str = ""
@@ -235,6 +243,7 @@ async def get_all_accounts() -> Dict[str, Dict[str, str]]:
         # 转换为旧格式以保持兼容性
         return {
             row['email']: {
+                'password': row.get('password', ''),
                 'refresh_token': row['refresh_token'], 
                 'client_id': row['client_id'],
                 'is_sold': row.get('is_sold', 0) == 1,
@@ -253,6 +262,7 @@ async def save_multiple_accounts_batch(credentials_list: List[AccountCredentials
         accounts_data = [
             {
                 'email': cred.email,
+                'password': cred.password or '',
                 'refresh_token': cred.refresh_token,
                 'client_id': cred.client_id
             } for cred in credentials_list
@@ -268,6 +278,7 @@ async def save_account_credentials(email_id: str, credentials: AccountCredential
     try:
         await database.save_account(
             email=email_id,
+            password=credentials.password or '',
             refresh_token=credentials.refresh_token,
             client_id=credentials.client_id
         )
@@ -829,7 +840,8 @@ async def get_accounts(
         # 仅返回邮箱列表，不检查状态
         return [
             AccountStatus(
-                email=email, 
+                email=email,
+                password=data.get('password', ''),
                 is_sold=data.get('is_sold', False),
                 remark=data.get('remark', '')
             ) for email, data in accounts.items()
@@ -854,7 +866,8 @@ async def get_accounts(
         status = "active" if is_active else "inactive"
         account_data = accounts.get(email, {})
         result.append(AccountStatus(
-            email=email, 
+            email=email,
+            password=account_data.get('password', ''),
             status=status,
             is_sold=account_data.get('is_sold', False),
             remark=account_data.get('remark', '')
@@ -997,14 +1010,29 @@ async def verify_accounts(
 async def verify_single_account(credentials: AccountCredentials) -> AccountVerificationResult:
     """验证单个账户凭证的有效性"""
     try:
+        # 调试：记录接收到的credentials
+        logger.info(f"验证账户 {credentials.email}, 密码长度: {len(credentials.password or '')}")
+        
         token = await get_access_token(credentials, check_only=True)
         if token:
-            return AccountVerificationResult(
+            # 显式创建一个新的credentials对象，确保所有字段都被包含
+            result_credentials = AccountCredentials(
+                email=credentials.email,
+                password=credentials.password or "",
+                refresh_token=credentials.refresh_token,
+                client_id=credentials.client_id
+            )
+            
+            result = AccountVerificationResult(
                 email=credentials.email,
                 status="success",
                 message="账户验证成功",
-                credentials=credentials
+                credentials=result_credentials
             )
+            # 调试：记录返回的结果
+            logger.info(f"验证成功，返回密码长度: {len(result.credentials.password or '')}")
+            logger.info(f"返回的credentials: email={result.credentials.email}, has_password={bool(result.credentials.password)}")
+            return result
         else:
             return AccountVerificationResult(
                 email=credentials.email,

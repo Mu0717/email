@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 # ============================================================================
 
 # 管理密码配置
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # 建议在生产环境中通过环境变量设置
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "003717")  # 建议在生产环境中通过环境变量设置
 
 # 密码哈希配置
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

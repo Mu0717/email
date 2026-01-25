@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>邮件查询系统</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <style>
+      .public-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .query-card {
+        max-width: 500px;
+        margin: 40px auto;
+        text-align: center;
+      }
+      .query-results {
+        margin-top: 30px;
+      }
+      .back-link {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: #64748b;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .back-link:hover {
+        color: #3b82f6;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- <a href="/" class="back-link">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      返回管理页
+    </a> -->
+
+    <div class="public-container">
+      <div class="header">
+        <h1>🔍 邮件自助查询</h1>
+      </div>
+
+      <div id="queryCard" class="card query-card">
+        <h2>输入邮箱查询</h2>
+        <p style="color: #64748b; margin-bottom: 20px">
+          输入您的Outlook邮箱地址以查看邮件
+        </p>
+
+        <div class="input-group" style="text-align: left">
+          <label>邮箱地址</label>
+          <input
+            type="email"
+            id="queryEmail"
+            placeholder="example@outlook.com"
+            onkeypress="handleKeyPress(event)"
+          />
+        </div>
+        <button class="btn btn-primary" onclick="queryEmail()">
+          🔍 查询邮件
+        </button>
+      </div>
+
+      <div id="resultCard" class="card hidden">
+        <div class="email-toolbar">
+          <div class="toolbar-left">
+            <h2>📧 <span id="displayEmail"></span></h2>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn btn-secondary" onclick="loadPublicEmails(true)">
+              🔄 刷新
+            </button>
+            <button class="btn btn-secondary" onclick="resetQuery()">
+              ❌ 退出查询
+            </button>
+          </div>
+        </div>
+
+        <div class="dual-view-container">
+          <div class="email-column">
+            <div class="column-header">
+              <h3>📥 收件箱</h3>
+              <span id="inboxCount" class="email-count">0</span>
+            </div>
+            <div id="inboxList" class="email-list loading">
+              <p>等待查询...</p>
+            </div>
+            <div id="inboxPagination" class="pagination hidden"></div>
+          </div>
+
+          <div class="email-column">
+            <div class="column-header">
+              <h3>🗑️ 垃圾邮件</h3>
+              <span id="junkCount" class="email-count">0</span>
+            </div>
+            <div id="junkList" class="email-list loading">
+              <p>等待查询...</p>
+            </div>
+            <div id="junkPagination" class="pagination hidden"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="detailCard" class="card hidden">
+        <button class="btn btn-secondary" onclick="backToResults()">
+          ← 返回列表
+        </button>
+        <div id="emailDetail" class="email-detail"></div>
+      </div>
+    </div>
+
+    <!-- 复用 script.js 的部分工具函数，但主要逻辑重写 -->
+    <script src="/static/js/script.js?v=2"></script>
+    <script>
+      // 覆盖 script.js 中的部分逻辑以适应公共查询
+      // 这里主要定义特定于 view.html 的逻辑
+
+      let targetEmail = "";
+
+      function handleKeyPress(event) {
+        if (event.key === "Enter") queryEmail();
+      }
+
+      async function queryEmail() {
+        const email = document.getElementById("queryEmail").value.trim();
+        if (!email) return showError("请输入邮箱地址");
+
+        targetEmail = email;
+
+        document.getElementById("queryCard").classList.add("hidden");
+        document.getElementById("resultCard").classList.remove("hidden");
+        document.getElementById("displayEmail").textContent = email;
+
+        // 重置分页
+        currentInboxPage = 1;
+        currentJunkPage = 1;
+
+        await loadPublicEmails();
+      }
+
+      function resetQuery() {
+        targetEmail = "";
+        document.getElementById("queryEmail").value = "";
+        document.getElementById("queryCard").classList.remove("hidden");
+        document.getElementById("resultCard").classList.add("hidden");
+        document.getElementById("detailCard").classList.add("hidden");
+      }
+
+      function backToResults() {
+        document.getElementById("detailCard").classList.add("hidden");
+        document.getElementById("resultCard").classList.remove("hidden");
+      }
+
+      // 修改 loadDualEmails 的替代版本
+      async function loadPublicEmails(forceRefresh = false) {
+        const inboxList = document.getElementById("inboxList");
+        const junkList = document.getElementById("junkList");
+
+        inboxList.innerHTML =
+          '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+        junkList.innerHTML =
+          '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+
+        try {
+          // 使用新的 Public API
+          const response = await fetch(
+            `/public/emails/${targetEmail}/dual-view?inbox_page=${currentInboxPage}&junk_page=${currentJunkPage}&page_size=20&force_refresh=${forceRefresh}`,
+          );
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(
+              err.detail || "查询失败，请检查邮箱是否正确或稍后重试",
+            );
+          }
+
+          const data = await response.json();
+
+          // 渲染逻辑复用 script.js 的 createEmailItem (假设 script.js 已加载)
+          // 这里需要确保 script.js 中的函数是全局可访问的
+
+          document.getElementById("inboxCount").textContent = data.inbox_total;
+          document.getElementById("junkCount").textContent = data.junk_total;
+
+          if (data.inbox_emails.length === 0) {
+            inboxList.innerHTML = '<div class="loading"><p>暂无邮件</p></div>';
+          } else {
+            inboxList.innerHTML = data.inbox_emails
+              .map((email) => createEmailItem(email))
+              .join("");
+          }
+
+          if (data.junk_emails.length === 0) {
+            junkList.innerHTML = '<div class="loading"><p>暂无邮件</p></div>';
+          } else {
+            junkList.innerHTML = data.junk_emails
+              .map((email) => createEmailItem(email))
+              .join("");
+          }
+
+          // 更新分页 (简单的覆盖/重写)
+          updatePublicPagination(data.inbox_total, data.junk_total);
+        } catch (error) {
+          inboxList.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
+          junkList.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
+          // 如果是401/404，可能需要提示用户
+          if (error.message.includes("Account not found")) {
+            alert("未找到该账户信息，请确认邮箱是否已录入系统");
+            resetQuery();
+          }
+        }
+      }
+
+      // 覆盖 createEmailItem 的点击事件，指向 public detail
+      // 注意：script.js 中的 createEmailItem 生成的 onclick 是 showEmailDetail(id)
+      // 我们需要覆盖 showEmailDetail 函数
+
+      window.showEmailDetail = async function (messageId) {
+        document.getElementById("resultCard").classList.add("hidden");
+        document.getElementById("detailCard").classList.remove("hidden");
+
+        const detailDiv = document.getElementById("emailDetail");
+        detailDiv.innerHTML = '<div class="loading"><p>加载中...</p></div>';
+
+        try {
+          const response = await fetch(
+            `/public/emails/${targetEmail}/${messageId}`,
+          );
+          if (!response.ok) throw new Error("获取邮件详情失败");
+
+          const email = await response.json();
+
+          // 复用 renderEmailContent
+          detailDiv.innerHTML = `
+                    <div class="email-detail-header">
+                        <h3 style="margin-bottom: 16px; color: #1e293b;">${email.subject || "(无主题)"}</h3>
+                        <div class="email-meta-info">
+                            <p><strong>发件人:</strong> ${email.from_email}</p>
+                            <p><strong>收件人:</strong> ${email.to_email}</p>
+                            <p><strong>日期:</strong> ${formatEmailDate(email.date)}</p>
+                        </div>
+                    </div>
+                    <div class="email-content-container">
+                        ${renderEmailContent(email)}
+                    </div>
+                `;
+        } catch (error) {
+          detailDiv.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
+        }
+      };
+
+      // 自定义分页函数
+      function updatePublicPagination(inboxTotal, junkTotal) {
+        const inboxPagination = document.getElementById("inboxPagination");
+        const junkPagination = document.getElementById("junkPagination");
+
+        // 分页逻辑... 简化版
+        const inboxPages = Math.ceil(inboxTotal / 20);
+        inboxPagination.innerHTML =
+          inboxPages > 1
+            ? `
+                <button class="btn btn-secondary" onclick="changePublicPage('inbox', -1)" ${currentInboxPage === 1 ? "disabled" : ""}>‹</button>
+                <span>${currentInboxPage}/${inboxPages}</span>
+                <button class="btn btn-secondary" onclick="changePublicPage('inbox', 1)" ${currentInboxPage === inboxPages ? "disabled" : ""}>›</button>
+              `
+            : "";
+        inboxPagination.classList.toggle("hidden", inboxPages <= 1);
+
+        const junkPages = Math.ceil(junkTotal / 20);
+        junkPagination.innerHTML =
+          junkPages > 1
+            ? `
+                 <button class="btn btn-secondary" onclick="changePublicPage('junk', -1)" ${currentJunkPage === 1 ? "disabled" : ""}>‹</button>
+                <span>${currentJunkPage}/${junkPages}</span>
+                <button class="btn btn-secondary" onclick="changePublicPage('junk', 1)" ${currentJunkPage === junkPages ? "disabled" : ""}>›</button>
+              `
+            : "";
+        junkPagination.classList.toggle("hidden", junkPages <= 1);
+      }
+
+      window.changePublicPage = async function (type, delta) {
+        if (type === "inbox") currentInboxPage += delta;
+        else currentJunkPage += delta;
+        await loadPublicEmails(false);
+      };
+
+      // 禁用 onload 逻辑（防止 script.js 自动跳到 adminLogin）
+      window.onload = null;
+      // 手动初始化
+      // 实际上 script.js 的 window.onload 会执行，我们需要确保这里的逻辑能覆盖或者忽略
+      // 由于 script.js 在前，这里的 window.onload = null 无效，因为 script.js 已经注册了？
+      // script.js 使用的是 `window.onload = function...` 赋值。
+      // 所以如果在 script.js 之后加载这个 script 块，重新赋值 window.onload 即可覆盖。
+      window.onload = function () {
+        // Do nothing specific, just ready
+        console.log("View page loaded");
+      };
+    </script>
+  </body>
+</html>

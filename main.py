@@ -230,10 +230,10 @@ async def get_account_credentials(email_id: str) -> AccountCredentials:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-async def get_all_accounts() -> Dict[str, Dict[str, str]]:
-    """获取所有账户信息"""
+async def get_all_accounts(search_query: Optional[str] = None, filter_type: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+    """获取账户信息（支持筛选）"""
     try:
-        accounts_list = await database.get_all_accounts()
+        accounts_list = await database.get_accounts_filtered(search_query, filter_type)
         # 转换为旧格式以保持兼容性
         return {
             row['email']: {
@@ -821,14 +821,18 @@ async def register_single_account(credentials: AccountCredentials) -> AccountRes
 @app.get("/accounts", response_model=List[AccountStatus])
 async def get_accounts(
     check_status: bool = False,
+    query: Optional[str] = None,
+    filter_type: Optional[str] = Query(None, alias="filter"),
     current_admin: bool = Depends(get_current_admin)
 ):
     """获取所有账户列表，可选择检查账户活性状态
     
     Args:
         check_status: 是否检查账户活性状态
+        query: 搜索关键词 (邮箱或备注)
+        filter_type: 筛选类型 (sold, unsold)
     """
-    accounts = await get_all_accounts()
+    accounts = await get_all_accounts(query, filter_type)
     
     if not check_status:
         # 仅返回邮箱列表，不检查状态
@@ -940,8 +944,13 @@ async def update_account_metadata_endpoint(
 
 @app.get("/")
 async def root():
-    """根路径 - 返回前端页面"""
+    """根路径 - Admin 页面"""
     return FileResponse("static/index.html")
+
+@app.get("/view")
+async def view_page():
+    """公开查询页面"""
+    return FileResponse("static/view.html")
 
 @app.get("/api")
 async def api_status():
@@ -952,9 +961,44 @@ async def api_status():
         "endpoints": {
             "register_account": "POST /accounts",
             "get_emails": "GET /emails/{email_id}",
-            "get_email_detail": "GET /emails/{email_id}/{message_id}"
+            "get_email_detail": "GET /emails/{email_id}/{message_id}",
+            "public_view": "GET /view"
         }
     }
+
+# ============================================================================
+# 公共API (无Admin Auth)
+# ============================================================================
+
+@app.get("/public/emails/{email_id}/dual-view")
+async def get_public_dual_view_emails(
+    email_id: str,
+    inbox_page: int = Query(1, ge=1),
+    junk_page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    force_refresh: bool = Query(False)
+):
+    """[Public] 获取双栏视图邮件"""
+    # 验证邮箱是否存在
+    credentials = await get_account_credentials(email_id)
+    
+    # 并行获取收件箱和垃圾箱邮件
+    inbox_response = await list_emails(credentials, "inbox", inbox_page, page_size, force_refresh)
+    junk_response = await list_emails(credentials, "junk", junk_page, page_size, force_refresh)
+    
+    return DualViewEmailResponse(
+        email_id=email_id,
+        inbox_emails=inbox_response.emails,
+        junk_emails=junk_response.emails,
+        inbox_total=inbox_response.total_emails,
+        junk_total=junk_response.total_emails
+    )
+
+@app.get("/public/emails/{email_id}/{message_id}", response_model=EmailDetailsResponse)
+async def get_public_email_detail(email_id: str, message_id: str):
+    """[Public] 获取邮件详细内容"""
+    credentials = await get_account_credentials(email_id)
+    return await get_email_details(credentials, message_id)
 
 @app.post("/accounts/verify", response_model=List[AccountVerificationResult])
 async def verify_accounts(

@@ -123,13 +123,39 @@ def _get_account_sync(email: str) -> Optional[Dict[str, Any]]:
     finally:
         conn.close()
 
-def _get_all_accounts_sync() -> List[Dict[str, Any]]:
+def _get_accounts_filtered_sync(search_query: Optional[str] = None, filter_type: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = get_db_connection()
     try:
-        rows = conn.execute('SELECT * FROM accounts ORDER BY email').fetchall()
+        sql = 'SELECT * FROM accounts'
+        conditions = []
+        params = []
+        
+        # Search filter (email or remark)
+        if search_query:
+            conditions.append('(email LIKE ? OR remark LIKE ?)')
+            params.append(f'%{search_query}%')
+            params.append(f'%{search_query}%')
+            
+        # Status/Type filter
+        if filter_type == 'sold':
+            conditions.append('is_sold = 1')
+        elif filter_type == 'unsold':
+            conditions.append('is_sold = 0')
+        # Note: 'active'/'inactive' are runtime checks, generally not filtered in DB unless persisted
+            
+        if conditions:
+            sql += ' WHERE ' + ' AND '.join(conditions)
+            
+        sql += ' ORDER BY email'
+        
+        rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
+
+def _get_all_accounts_sync() -> List[Dict[str, Any]]:
+    # Maintain backward compatibility or redirect to filtered
+    return _get_accounts_filtered_sync()
 
 def _upsert_account_sync(email: str, refresh_token: str, client_id: str, password: str = ''):
     conn = get_db_connection()
@@ -195,6 +221,9 @@ async def get_account(email: str) -> Optional[Dict[str, Any]]:
 
 async def get_all_accounts() -> List[Dict[str, Any]]:
     return await asyncio.to_thread(_get_all_accounts_sync)
+
+async def get_accounts_filtered(search_query: Optional[str] = None, filter_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    return await asyncio.to_thread(_get_accounts_filtered_sync, search_query, filter_type)
 
 async def save_account(email: str, refresh_token: str, client_id: str, password: str = ''):
     await asyncio.to_thread(_upsert_account_sync, email, refresh_token, client_id, password)

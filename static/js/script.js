@@ -62,7 +62,7 @@ function formatEmailDate(dateString) {
       "Date formatting error:",
       error,
       "Original date:",
-      dateString
+      dateString,
     );
     return "时间解析失败";
   }
@@ -177,8 +177,8 @@ function switchTab(tab) {
       (tab === "single"
         ? "单账户登录"
         : tab === "batch"
-        ? "批量登录"
-        : "账户管理")
+          ? "批量登录"
+          : "账户管理")
     ) {
       btn.classList.add("active");
     }
@@ -189,8 +189,8 @@ function switchTab(tab) {
     tab === "single"
       ? "singleLogin"
       : tab === "batch"
-      ? "batchLogin"
-      : "accountManage";
+        ? "batchLogin"
+        : "accountManage";
   document.getElementById(contentId).classList.remove("hidden");
 
   // 如果切换到账户管理标签，自动加载账户列表
@@ -340,7 +340,7 @@ async function verifyBatchAccounts() {
 
 async function importSelectedAccounts() {
   const checkboxes = document.querySelectorAll(
-    ".verification-checkbox-input:checked"
+    ".verification-checkbox-input:checked",
   );
   if (checkboxes.length === 0) {
     showError("请至少选择一个要导入的账户");
@@ -383,8 +383,8 @@ async function importSelectedAccounts() {
     const successCount = Array.isArray(results)
       ? results.filter((r) => !r.message.startsWith("Error")).length
       : results.message.includes("success")
-      ? 1
-      : 0;
+        ? 1
+        : 0;
 
     // 注意：密码已存储在数据库中，不需要存储在本地localStorage
     // 本地存储仅用于临时缓存，不包含敏感信息
@@ -521,13 +521,17 @@ function renderVerificationResult(results) {
 function toggleSelectAllVerified() {
   const isChecked = document.getElementById("selectAllVerified").checked;
   const checkboxes = document.querySelectorAll(
-    ".verification-checkbox-input:not([disabled])"
+    ".verification-checkbox-input:not([disabled])",
   );
 
   checkboxes.forEach((checkbox) => {
     checkbox.checked = isChecked;
   });
 }
+
+// 全局状态记录当前筛选条件
+let currentStatusFilter = "all";
+let searchDebounceTimer = null;
 
 async function loadAccountList(forceCheck = false) {
   const tableBody = document.getElementById("accountTableBody");
@@ -540,21 +544,89 @@ async function loadAccountList(forceCheck = false) {
   }
 
   try {
-    // 调用后端API获取账户列表及其状态
-    const response = await makeRequest(
-      `${API_BASE}/accounts?check_status=${forceCheck}`
-    );
+    const searchTerm = document.getElementById("accountSearch").value;
+    let url = `${API_BASE}/accounts?check_status=${forceCheck}`;
+
+    // 添加搜索参数
+    if (searchTerm) {
+      url += `&query=${encodeURIComponent(searchTerm)}`;
+    }
+
+    // 添加状态参数 (仅sold/unsold发送给后端)
+    if (currentStatusFilter === "sold" || currentStatusFilter === "unsold") {
+      url += `&filter=${currentStatusFilter}`;
+    }
+
+    const response = await makeRequest(url);
 
     if (!response.ok) throw new Error("获取账户列表失败");
 
     const accounts = await response.json();
     renderAccountList(accounts);
 
+    // 如果是 active/inactive 筛选，在前端进行过滤
+    if (
+      currentStatusFilter === "active" ||
+      currentStatusFilter === "inactive"
+    ) {
+      applyClientSideStatusFilter();
+    }
+
     // 更新账户数量显示
     document.getElementById("accountCount").textContent = accounts.length;
   } catch (error) {
     tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #dc2626; padding: 20px;">加载失败: ${error.message}</td></tr>`;
   }
+}
+
+function filterAccounts() {
+  // 防抖处理搜索
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    loadAccountList();
+  }, 500);
+}
+
+function filterByStatus(status) {
+  console.log(status, "===filterByStatus");
+
+  currentStatusFilter = status;
+
+  // 更新按钮状态
+  document.querySelectorAll(".filter-btn").forEach((btn) => {
+    btn.classList.remove("active");
+  });
+  const activeBtn = document.querySelector(
+    `.filter-btn[data-filter="${status}"]`,
+  );
+  if (activeBtn) activeBtn.classList.add("active");
+
+  // 统一重新加载列表，loadAccountList内部会根据currentStatusFilter决定
+  // 1. 发送什么参数给后端 (sold/unsold/query)
+  // 2. 是否应用前端过滤 (active/inactive)
+  loadAccountList();
+}
+
+function applyClientSideStatusFilter() {
+  const rows = document.querySelectorAll("#accountTableBody tr.account-row");
+  rows.forEach((row) => {
+    const itemStatus = row.getAttribute("data-status");
+    if (currentStatusFilter === "all") {
+      row.classList.remove("filtered");
+    } else if (
+      currentStatusFilter === "active" ||
+      currentStatusFilter === "inactive"
+    ) {
+      if (itemStatus === currentStatusFilter) {
+        row.classList.remove("filtered");
+      } else {
+        row.classList.add("filtered");
+      }
+    } else {
+      // sold/unsold 应该由后端处理完了，前端显示全部即可
+      row.classList.remove("filtered");
+    }
+  });
 }
 
 function renderAccountList(accounts) {
@@ -573,14 +645,14 @@ function renderAccountList(accounts) {
       account.status === "active"
         ? "status-active"
         : account.status === "inactive"
-        ? "status-inactive"
-        : "status-unknown";
+          ? "status-inactive"
+          : "status-unknown";
     const statusText =
       account.status === "active"
         ? "有效"
         : account.status === "inactive"
-        ? "无效"
-        : "未知";
+          ? "无效"
+          : "未知";
 
     // 直接使用API返回的数据
     const isSold = account.is_sold === true;
@@ -604,8 +676,8 @@ function renderAccountList(accounts) {
                     <td class="password-cell">
                         <div class="password-wrapper">
                             <span class="password-text" data-password="${password}">${
-      password ? "••••••••" : "未设置"
-    }</span>
+                              password ? "••••••••" : "未设置"
+                            }</span>
                             ${
                               password
                                 ? `<button class="btn-copy-password" onclick="copyPassword('${password}', event)" title="复制密码">
@@ -700,67 +772,11 @@ async function updateRemark(email, value) {
   }
 }
 
-function filterAccounts() {
-  const searchTerm = document
-    .getElementById("accountSearch")
-    .value.toLowerCase();
-  const rows = document.querySelectorAll("#accountTableBody tr.account-row");
-
-  rows.forEach((row) => {
-    const email = row.getAttribute("data-email").toLowerCase();
-    const remarkInput = row.querySelector(".remark-input");
-    const remark = remarkInput ? remarkInput.value.toLowerCase() : "";
-
-    // 搜索同时匹配邮箱和备注
-    if (email.includes(searchTerm) || remark.includes(searchTerm)) {
-      row.classList.remove("filtered");
-    } else {
-      row.classList.add("filtered");
-    }
-  });
-}
-
-function filterByStatus(status) {
-  // 更新按钮状态
-  document.querySelectorAll(".filter-btn").forEach((btn) => {
-    btn.classList.remove("active");
-  });
-  document
-    .querySelector(`.filter-btn[data-filter="${status}"]`)
-    .classList.add("active");
-
-  // 筛选账户列表
-  const rows = document.querySelectorAll("#accountTableBody tr.account-row");
-
-  rows.forEach((row) => {
-    const itemStatus = row.getAttribute("data-status");
-    const isSold = row.getAttribute("data-sold") === "true";
-
-    let visible = false;
-
-    if (status === "all") {
-      visible = true;
-    } else if (status === "active" || status === "inactive") {
-      visible = itemStatus === status;
-    } else if (status === "sold") {
-      visible = isSold;
-    } else if (status === "unsold") {
-      visible = !isSold;
-    }
-
-    if (visible) {
-      row.classList.remove("filtered");
-    } else {
-      row.classList.add("filtered");
-    }
-  });
-}
-
 function toggleSelectAll() {
   const isChecked = document.getElementById("selectAllAccounts").checked;
   // 只选择可见的行
   const visibleCheckboxes = document.querySelectorAll(
-    "#accountTableBody tr.account-row:not(.filtered) .account-checkbox"
+    "#accountTableBody tr.account-row:not(.filtered) .account-checkbox",
   );
 
   visibleCheckboxes.forEach((checkbox) => {
@@ -838,7 +854,7 @@ function loginWithAccount(email) {
 
 async function deleteSelectedAccounts() {
   const checkboxes = document.querySelectorAll(
-    "#accountTableBody .account-checkbox:checked"
+    "#accountTableBody .account-checkbox:checked",
   );
   if (checkboxes.length === 0) {
     showError("请至少选择一个要删除的账户");
@@ -925,7 +941,7 @@ async function loadDualEmails(forceRefresh = false) {
 
   try {
     const response = await makeRequest(
-      `${API_BASE}/emails/${currentUser}/dual-view?inbox_page=${currentInboxPage}&junk_page=${currentJunkPage}&page_size=20&force_refresh=${forceRefresh}`
+      `${API_BASE}/emails/${currentUser}/dual-view?inbox_page=${currentInboxPage}&junk_page=${currentJunkPage}&page_size=20&force_refresh=${forceRefresh}`,
     );
     if (!response.ok) throw new Error("获取邮件失败");
 
@@ -983,7 +999,7 @@ function createEmailItem(email) {
                                 }</h3>
                                 <div class="email-meta">
                                     <span class="email-date">${formatEmailDate(
-                                      email.date
+                                      email.date,
                                     )}</span>
                                     <div class="email-status">
                                         <div class="status-indicator ${readStatus}"></div>
@@ -1065,7 +1081,7 @@ function renderEmailContent(email) {
                     <div id="htmlContent" class="email-content html-content">
                         <iframe srcdoc="${sanitizedHtml.replace(
                           /"/g,
-                          "&quot;"
+                          "&quot;",
                         )}" 
                                 style="width: 100%; min-height: 400px; border: 1px solid #e2e8f0; border-radius: 8px;"
                                 sandbox="allow-same-origin">
@@ -1199,7 +1215,7 @@ async function showEmailDetail(messageId) {
 
   try {
     const response = await makeRequest(
-      `${API_BASE}/emails/${currentUser}/${messageId}`
+      `${API_BASE}/emails/${currentUser}/${messageId}`,
     );
     if (!response.ok) throw new Error("获取邮件详情失败");
 
@@ -1214,7 +1230,7 @@ async function showEmailDetail(messageId) {
                             <p><strong>发件人:</strong> ${email.from_email}</p>
                             <p><strong>收件人:</strong> ${email.to_email}</p>
                             <p><strong>日期:</strong> ${formatEmailDate(
-                              email.date
+                              email.date,
                             )} (${new Date(email.date).toLocaleString()})</p>
                         </div>
                     </div>
@@ -1341,8 +1357,8 @@ function updateDualPagination(inboxTotal, junkTotal) {
                     <button class="btn btn-secondary" onclick="loadInboxPage(${
                       currentInboxPage + 1
                     })" ${
-      currentInboxPage === inboxPages ? "disabled" : ""
-    }>›</button>
+                      currentInboxPage === inboxPages ? "disabled" : ""
+                    }>›</button>
                 `;
   }
 
@@ -1360,20 +1376,60 @@ function updateDualPagination(inboxTotal, junkTotal) {
                     <button class="btn btn-secondary" onclick="loadJunkPage(${
                       currentJunkPage + 1
                     })" ${
-      currentJunkPage === junkPages ? "disabled" : ""
-    }>›</button>
+                      currentJunkPage === junkPages ? "disabled" : ""
+                    }>›</button>
                 `;
   }
 }
 
-window.onload = function () {
-  // 检查管理员认证状态
-  if (isPasswordSet()) {
-    showEmailManagement();
-  } else {
-    showAdminLogin();
-  }
+// 页面加载时的逻辑
+window.onload = async function () {
+  // admin login check
+  await verifySession();
 };
+
+async function verifySession() {
+  // 显示加载状态，避免闪烁
+  document.getElementById("adminLoginCard").classList.add("hidden");
+  document.getElementById("loginCard").classList.add("hidden");
+
+  // 暂时插入一个全屏加载层
+  const loader = document.createElement("div");
+  loader.id = "pageLoader";
+  loader.className = "loading-overlay";
+  loader.innerHTML = '<div class="spinner"></div><p>正在验证身份...</p>';
+  document.body.appendChild(loader);
+
+  if (isPasswordSet()) {
+    try {
+      // 验证密码是否有效
+      const response = await fetch(`${API_BASE}/auth/config`, {
+        headers: {
+          Authorization: `Bearer ${adminPassword}`,
+        },
+      });
+
+      if (response.ok) {
+        document.body.removeChild(loader);
+        showEmailManagement();
+        return;
+      } else {
+        // 密码失效
+        clearAdminPassword();
+      }
+    } catch (e) {
+      console.error("Session verification failed", e);
+      // 网络错误等情况，也暂时清除或让用户重试，这里选择清除并重登
+      clearAdminPassword();
+    }
+  }
+
+  // 未登录或验证失败
+  if (document.getElementById("pageLoader")) {
+    document.body.removeChild(loader);
+  }
+  showAdminLogin();
+}
 
 // 页面可见性变化时刷新账户选择器
 document.addEventListener("visibilitychange", function () {

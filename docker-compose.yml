@@ -15,7 +15,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8002
       # 安全配置（生产环境中请修改这些值）
-      - ADMIN_PASSWORD=admin123
+      - ADMIN_PASSWORD=003717
     restart: unless-stopped
     healthcheck:
       test:
